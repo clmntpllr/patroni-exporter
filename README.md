@@ -1,6 +1,7 @@
 # patroni-exporter
 
-## Forked from [Showmax/patroni-exporter](https://github.com/Showmax/patroni-exporter)
+***Forked from [Showmax/patroni-exporter](https://github.com/Showmax/patroni-exporter)***
+
 Provides Patroni related metrics for Prometheus.
 
 This exporter scrapes Patroni API (https://github.com/zalando/patroni) and transforms the obtained information into Prometheus-scrapable (https://prometheus.io/) format.

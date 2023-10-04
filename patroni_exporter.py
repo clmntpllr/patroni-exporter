@@ -266,6 +266,19 @@ class PatroniExporter:
                                     TLS certificate, or a path
                                     to a CA bundle to use. 
                                     Defaults to ``true``""")
+        parser.add_argument('--tls', 
+                            dest='tls',
+                            action='store_true',
+                            default=environ.get('PATRONI_EXPORTER_TLS', False),
+                            help='Strictly accept only TLS connections.')
+        parser.add_argument('--tls-key',
+                            dest='tls_key',
+                            default=environ.get('PATRONI_EXPORTER_TLS_KEY', 'private.key'),
+                            help='Path to TLS key file')
+        parser.add_argument('--tls-cert',
+                            dest='tls_cert',
+                            default=environ.get('PATRONI_EXPORTER_TLS_CERT', 'certificate.crt'),
+                            help='Path to TLS certificate file')
 
         known, unknown = parser.parse_known_args()
 
@@ -310,6 +323,11 @@ class PatroniExporter:
                             self.cmdline.port,
                             self.app,
                             self.get_server_class())
+        if self.cmdline.tls:
+            import ssl
+            httpd.socket = ssl.wrap_socket(httpd.socket, 
+                    certfile=self.cmdline.tls_cert, keyfile=self.cmdline.tls_key, 
+                    server_side=True)
         httpd.serve_forever()
 
 

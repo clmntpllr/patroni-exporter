@@ -32,7 +32,7 @@ logger = logging.getLogger('patroni-exporter')
 
 
 class PatroniCollector:
-    def __init__(self, url: str, timeout: int, verify: str):
+    def __init__(self, url: str, timeout: int, verify: str, patroni_client_cert: str, patroni_client_key: str):
         self.url = url
         self.scrape = {}
         self.data: defaultdict[str, Dict[str, Union[str, int, List]]]\
@@ -42,7 +42,8 @@ class PatroniCollector:
             lambda v: v.lower() == 'true' if v in ('true', 'false') else v,
             [verify]
         ))
-
+        self.patroni_client_cert = patroni_client_cert
+        self.patroni_client_key = patroni_client_key
         self.status = '200 OK'
 
     def scrape_patroni(self) -> None:
@@ -53,8 +54,12 @@ class PatroniCollector:
         """
         logger.debug(f'Scraping Patroni API at {self.url}.')
         try:
-            r = requests.get(self.url, timeout=self.timeout,
-                             verify=self.requests_verify)
+            if self.patroni_client_cert is not None:
+                r = requests.get(self.url, timeout=self.timeout,
+                             cert=(self.patroni_client_cert, self.patroni_client_key))
+            else:
+                r = requests.get(self.url, timeout=self.timeout,
+                                verify=self.requests_verify)
             self.scrape = r.json()
             if not self.scrape.get('role') == 'replica':
                 r.raise_for_status()
@@ -86,10 +91,10 @@ class PatroniCollector:
         # will go to which data sections
         scrape_mapping = {
             'postgresql_info': ('server_version', 'database_system_identifier'),
-            'patroni_info': ('role', 'state'),
+            'patroni_info': ('role', 'state', 'replication_state'),
             'postgresql_gauge': ('postmaster_start_time', 'timeline',
                                  'pending_restart'),
-            'patroni_gauge': ('cluster_unlocked', 'pause'),
+            'patroni_gauge': ('cluster_unlocked', 'pause', 'dcs_last_seen'),
         }
 
         # these records consist of a dict or a list of dict (replication)
@@ -120,7 +125,7 @@ class PatroniCollector:
                 if item in self.scrape:
                     self.data[key][item] = self.scrape.pop(item)
 
-                if item in {'pending_restart', 'cluster_unlocked', 'pause'} \
+                if item in {'pending_restart', 'cluster_unlocked', 'pause', 'replication_state'} \
                         and item not in self.data[key]:
                     logger.debug(f'`{item}`` not in scrape, setting to False')
                     self.data[key][item] = False
@@ -210,7 +215,9 @@ class PatroniExporter:
 
         self.collector = PatroniCollector(self.cmdline.url,
                                           self.cmdline.timeout,
-                                          self.cmdline.requests_verify)
+                                          self.cmdline.requests_verify,
+                                          self.cmdline.patroni_client_cert,
+                                          self.cmdline.patroni_client_key)
         REGISTRY.register(self.collector)
 
     def get_server_class(self) -> Type['WSGIServer']:
@@ -260,11 +267,11 @@ class PatroniExporter:
         parser.add_argument('--requests-verify',
                             dest='requests_verify',
                             default=environ.get('PATRONI_EXPORTER_REQUEST_VERIFY', 'true'),
-                            help="""Accepts `true|false`, 
+                            help="""Accepts `true|false`,
                                     in which case it controls
-                                    whether requests verify the server's 
+                                    whether requests verify the server's
                                     TLS certificate, or a path
-                                    to a CA bundle to use. 
+                                    to a CA bundle to use.
                                     Defaults to ``true``""")
         parser.add_argument('--tls', 
                             dest='tls',
@@ -279,6 +286,14 @@ class PatroniExporter:
                             dest='tls_cert',
                             default=environ.get('PATRONI_EXPORTER_TLS_CERT', 'certificate.crt'),
                             help='Path to TLS certificate file')
+        parser.add_argument('--patroni-client-cert', 
+                            dest='patroni_client_cert',
+                            default=environ.get('PATRONI_CLIENT_CERT', None),
+                            help='Path to TLS certificate file')
+        parser.add_argument('--patroni-client-key',
+                            dest='patroni_client_key',
+                            default=environ.get('PATRONI_CLIENT_KEY', None),
+                            help='Path to TLS key file')
 
         known, unknown = parser.parse_known_args()
 
